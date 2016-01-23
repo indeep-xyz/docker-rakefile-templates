@@ -1,0 +1,9 @@
+# swap files
+*.~
+*.swp
+
+# sublime text
+*.sublime-*
+
+# Rakefile.d
+/Rakefile.d/host/*.erb.cache

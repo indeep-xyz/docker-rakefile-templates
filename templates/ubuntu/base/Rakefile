@@ -1,0 +1,160 @@
+Dir.chdir(File.expand_path('..', __FILE__))
+$LOAD_PATH.unshift(File.join('Rakefile.d', 'lib'))
+
+require 'erubis'
+require 'yaml'
+require 'project_manager'
+require 'service_manager'
+
+NginxFileIsNotDeployed = Class.new(StandardError)
+
+# = = = = = = = = = = = = = = = = = = =
+# global variables
+#
+# The suffixes of variable names
+# mean the followings.
+#   ****_C ... Docker container
+#   ****_H ... Docker host
+#   ****_T ... template
+
+# - -
+# for template developer
+
+TEMPLATE_VERSION = 'ubuntu.base.20160123.1'
+
+RAKEFILE_DIR = "#{Dir.pwd}/Rakefile.d"
+COMPOSE_CONF = YAML.load_file('docker-compose.yml')
+
+# - -
+# for template user
+
+VERSION = ''
+
+PROJECT_NAME = File.basename(Dir.pwd)
+FRONT_SERVICE_NAME   = 'app'
+FRONT_SERVICE_PORT_C = 80
+FRONT_SERVICE_PORT_H = 8000
+
+NGINX_H_PREFIX = "/etc/nginx/sites-enabled/docker-"
+NGINX_T        = "#{RAKEFILE_DIR}/host/nginx.src.erb"
+SHELL_C = '/bin/bash'
+
+# = = = = = = = = = = = = = = = = = = =
+# tasks
+
+task :default do
+  sh "rake --tasks"
+end
+
+# desc 'Build an image'
+# task :build do
+#   sh "docker build" \
+#        " --rm" \
+#        " -t \"#{IMAGE}\"" \
+#        " \"#{RAKEFILE_DIR}/image\""
+# end
+
+desc 'Clean containers'
+task clean: [:stop] do
+  mgr = ProjectManager.new(PROJECT_NAME)
+  mgr.sh 'rm -f'
+end
+
+desc 'Stop containers'
+task :stop do
+  Rake::Task['host:nginx:rm'].execute
+
+  mgr = ProjectManager.new(PROJECT_NAME)
+  mgr.sh "stop"
+end
+
+desc 'Up containers'
+task up: [:clean] do |task, args|
+  attach_opt = (ENV['ATTACH']) ? '' : '-d'
+
+  mgr = ProjectManager.new(PROJECT_NAME)
+  mgr.sh "up #{attach_opt}"
+
+  if (ENV['NGINX'])
+    sleep 3
+    Rake::Task['host:nginx:deploy'].execute
+  end
+end
+
+COMPOSE_CONF.each_key do |service_name|
+  namespace service_name.to_sym do
+    desc "Print IP-Address of the #{service_name} container"
+    task :ip do
+      mgr = ServiceManager.new(PROJECT_NAME, service_name)
+      puts mgr.ip
+    end
+
+    desc "Print the name of the #{service_name} container"
+    task :name do
+      mgr = ServiceManager.new(PROJECT_NAME, service_name)
+      puts mgr.name
+    end
+
+    desc "Enter the #{service_name} container with TTY"
+    task :sh do |task, args|
+      mgr = ServiceManager.new(PROJECT_NAME, service_name)
+      sh "docker exec -it #{mgr.name} #{SHELL_C}"
+    end
+  end
+end
+
+namespace FRONT_SERVICE_NAME.to_sym do
+  desc "Get response text from the #{FRONT_SERVICE_NAME} server by cURL"
+  task :curl do
+    port = ENV['PORT'] || FRONT_SERVICE_PORT_C
+    mgr = ServiceManager.new(PROJECT_NAME, FRONT_SERVICE_NAME)
+
+    puts %x|curl -s #{mgr.ip}:#{port}|
+  end
+end
+
+namespace :host do
+  namespace :nginx do
+    desc 'Deploy the Nginx file to the Docker host'
+    task :deploy do
+      mgr     = ServiceManager.new(PROJECT_NAME, FRONT_SERVICE_NAME)
+      nginx_h = NGINX_H_PREFIX + mgr.name
+      config  = `rake host:nginx:make`
+
+      IO.popen("sudo tee \"#{nginx_h}\" > /dev/null", 'w') {|io| io.puts(config) }
+      sh 'sudo service nginx reload' unless (ENV['UNRELOAD'])
+    end
+
+    desc 'Make the Nginx config and print it'
+    task :make do
+      mgr = ServiceManager.new(PROJECT_NAME, FRONT_SERVICE_NAME)
+
+      puts Erubis::Eruby
+          .load_file(NGINX_T)
+          .evaluate(
+              ip:     mgr.ip,
+              port_c: FRONT_SERVICE_PORT_C,
+              port_h: FRONT_SERVICE_PORT_H)
+    end
+
+    desc 'Remove the Nginx file deployed'
+    task :rm do
+      begin
+        mgr     = ServiceManager.new(PROJECT_NAME, FRONT_SERVICE_NAME)
+        nginx_h = NGINX_H_PREFIX + mgr.name
+
+        sh "sudo rm \"#{nginx_h}\"" if File.exist?(nginx_h)
+      rescue ServiceManager::FailedToGetName
+      end
+    end
+
+    desc 'Print the Nginx file deployed'
+    task :print do
+      mgr     = ServiceManager.new(PROJECT_NAME, FRONT_SERVICE_NAME)
+      nginx_h = NGINX_H_PREFIX + mgr.name
+
+      raise NginxFileIsNotDeployed unless File.exist?(nginx_h)
+      puts File.read(nginx_h)
+    end
+  end
+end
