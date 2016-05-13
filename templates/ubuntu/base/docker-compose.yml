@@ -1,9 +1,11 @@
 app:
-  image: ubuntu
+  # image base
+  #   image: ubuntu
+  # build base
+  #   build: path/to/dockerfile_dir
+  build: Rakefile.d/container/app
   volumes:
     - volumes/app:/app
   working_dir: /app
-  # test server
-  command: "python3 -m http.server 80"
-
-
+  # keep running
+  command: "tail -f /dev/null"

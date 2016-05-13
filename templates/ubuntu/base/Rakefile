@@ -30,7 +30,7 @@ COMPOSE_CONF = YAML.load_file('docker-compose.yml')
 
 VERSION = ''
 
-PROJECT_NAME = File.basename(Dir.pwd)
+PROJECT_NAME = 'rake-template-base'
 FRONT_SERVICE_NAME   = 'app'
 FRONT_SERVICE_PORT_C = 80
 FRONT_SERVICE_PORT_H = 8000
@@ -46,13 +46,11 @@ task :default do
   sh "rake --tasks"
 end
 
-# desc 'Build an image'
-# task :build do
-#   sh "docker build" \
-#        " --rm" \
-#        " -t \"#{IMAGE}\"" \
-#        " \"#{RAKEFILE_DIR}/image\""
-# end
+desc 'Build images'
+task :build do
+  mgr = ProjectManager.new(PROJECT_NAME)
+  mgr.sh "build"
+end
 
 desc 'Clean containers'
 task clean: [:stop] do
