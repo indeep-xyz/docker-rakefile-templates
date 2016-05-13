@@ -20,7 +20,7 @@ NginxFileIsNotDeployed = Class.new(StandardError)
 # - -
 # for template developer
 
-TEMPLATE_VERSION = 'ubuntu.base.20160123.1'
+TEMPLATE_VERSION = 'ubuntu.base.20160513.1'
 
 RAKEFILE_DIR = "#{Dir.pwd}/Rakefile.d"
 COMPOSE_CONF = YAML.load_file('docker-compose.yml')
